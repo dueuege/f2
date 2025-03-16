@@ -303,14 +303,10 @@ class BaseDownloader(BaseCrawler):
                         await asyncio.sleep(sleep_time)  # 等待 5 秒后重试
                     else:
                         logger.error(_("所有重试次数已用尽"))
-                        raise APIRetryExhaustedError(_("所有链接都无法下载，任务失败"))
+                        #raise APIRetryExhaustedError(_("所有链接都无法下载，任务失败"))
 
                 except Exception as e:
                     logger.error(_("下载失败：{0}").format(e))
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(sleep_time)
-                    else:
-                        raise
 
     async def save_file(
         self,
