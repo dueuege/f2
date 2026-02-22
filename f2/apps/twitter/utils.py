@@ -270,7 +270,7 @@ class TweetIdFetcher(BaseCrawler):
 
         if host is None:
             raise APINotFoundError(
-                _("无法解析URL的主机部分。类名：{0}".format(cls.__name__))
+                _("无法解析URL的主机部分。类名：{0}").format(cls.__name__)
             )
         try:
             if "t.co" in host:
@@ -386,7 +386,7 @@ def format_file_name(
     try:
         return naming_template.format(**fields)
     except KeyError as e:
-        raise KeyError(_("文件名模板字段 {0} 不存在，请检查".format(e)))
+        raise KeyError(_("文件名模板字段 {0} 不存在，请检查").format(e))
 
 
 def create_or_rename_user_folder(

@@ -30,6 +30,9 @@ class DouyinAPIEndpoints:
     # 用户短信息 (User Short Info)
     USER_SHORT_INFO = f"{DOUYIN_DOMAIN}/aweme/v1/web/im/user/info/"
 
+    # 用户活跃状态 (User Active Status)
+    USER_ACTIVE_STATUS = f"{DOUYIN_DOMAIN}/aweme/v1/web/im/user/active/status/"
+
     # 用户详细信息 (User Detail Info)
     USER_DETAIL = f"{DOUYIN_DOMAIN}/aweme/v1/web/user/profile/other/"
 

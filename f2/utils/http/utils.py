@@ -73,7 +73,7 @@ async def get_content_length(
         # 策略1：HEAD请求重试
         for attempt in range(max_retries):
             try:
-                response = await aclient.head(url, headers=optimized_headers)
+                response = await aclient.head(url)
                 response.raise_for_status()
 
                 content_length = response.headers.get("Content-Length")
@@ -161,9 +161,7 @@ async def get_content_length(
         # 策略2：退避到GET Stream请求获取Content-Length
         logger.debug(_("尝试使用GET Stream请求获取Content-Length"))
         try:
-            async with aclient.stream(
-                "GET", url, headers=optimized_headers
-            ) as response:
+            async with aclient.stream("GET", url) as response:
                 response.raise_for_status()
 
                 content_length = response.headers.get("Content-Length")
@@ -193,7 +191,7 @@ async def get_content_length(
         # 策略3：退避到GET请求获取Content-Length
         logger.debug(_("尝试使用GET请求获取Content-Length"))
         try:
-            response = await aclient.get(url, headers=optimized_headers)
+            response = await aclient.get(url)
             response.raise_for_status()
 
             content_length = response.headers.get("Content-Length")
@@ -301,11 +299,11 @@ async def get_segments_from_m3u8(
     try:
         m3u8_obj = m3u8.load(url)
     except HTTPError as e:
-        logger.error(_("无法加载m3u8文件：{0}，错误详情：{1}").format(url, e))
+        trace_logger.error(_("无法加载m3u8文件：{0}，错误详情：{1}").format(url, e))
         trace_logger.error(traceback.format_exc())
         return None
     except Exception as e:
-        logger.error(_("加载m3u8文件时发生错误：{0}").format(e))
+        trace_logger.error(_("加载m3u8文件时发生错误：{0}").format(e))
         trace_logger.error(traceback.format_exc())
         return None
 

@@ -1,6 +1,7 @@
 # path: f2/apps/douyin/handler.py
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 from urllib.parse import quote
@@ -28,6 +29,7 @@ from f2.apps.douyin.filter import (
     PostTimeDanmakuFilter,
     QueryUserFilter,
     SuggestWordFilter,
+    UserActiveStatusFilter,
     UserCollectionFilter,
     UserCollectsFilter,
     UserFollowerFilter,
@@ -40,6 +42,7 @@ from f2.apps.douyin.filter import (
     UserMusicCollectionFilter,
     UserPostFilter,
     UserProfileFilter,
+    UserShortInfoFilter,
 )
 from f2.apps.douyin.model import (
     FollowingUserLive,
@@ -57,6 +60,7 @@ from f2.apps.douyin.model import (
     PostTimeDanmaku,
     QueryUser,
     SuggestWord,
+    UserActiveStatus,
     UserCollection,
     UserCollects,
     UserCollectsVideo,
@@ -71,6 +75,7 @@ from f2.apps.douyin.model import (
     UserMusicCollection,
     UserPost,
     UserProfile,
+    UserShortInfo,
 )
 from f2.apps.douyin.utils import (  # VerifyFpManager,
     AwemeIdFetcher,
@@ -192,6 +197,76 @@ class DouyinHandler:
                     _("`fetch_user_profile`请求失败，请更换cookie或稍后再试")
                 )
             return user
+
+    async def fetch_user_active_status(
+        self,
+        sec_user_ids: List[str],
+        source: str = "heartbeat",
+    ) -> UserActiveStatusFilter:
+        """
+        用于获取指定用户的活跃状态（批量获取用户在线状态）
+        (Used to get active status of specified users in batch)
+
+        Args:
+            sec_user_ids: List[str]: 用户ID列表 (List of User IDs)
+            source: str: 来源标识，默认为 "heartbeat" (Source identifier)
+
+        Return:
+            user_status: UserActiveStatusFilter: 用户活跃状态过滤器 (User active status filter)
+        """
+
+        if not sec_user_ids:
+            raise ValueError(_("`sec_user_ids`不能为空"))
+
+        # 将列表转换为 JSON 字符串格式
+        sec_user_ids_json = json.dumps(sec_user_ids)
+
+        async with DouyinCrawler(self.kwargs) as crawler:
+            params = UserActiveStatus(
+                source=source,
+                sec_user_ids=sec_user_ids_json,
+            )
+            response = await crawler.fetch_user_active_status(params)
+            user_status = UserActiveStatusFilter(response)
+            if user_status.user_active_list is None:
+                raise APIResponseError(
+                    _(
+                        "`fetch_user_active_status`请求失败，登录已失效请更换Cookie后再试"
+                    )
+                )
+            return user_status
+
+    async def fetch_user_short_info(
+        self,
+        sec_user_ids: List[str],
+    ) -> UserShortInfoFilter:
+        """
+        用于获取指定用户的短信息（批量获取用户基本信息）
+        (Used to get short info of specified users in batch)
+
+        Args:
+            sec_user_ids: List[str]: 用户ID列表 (List of User IDs)
+
+        Return:
+            user_info: UserShortInfoFilter: 用户短信息过滤器 (User short info filter)
+        """
+
+        if not sec_user_ids:
+            raise ValueError(_("`sec_user_ids`不能为空"))
+
+        # 将列表转换为 JSON 字符串格式
+        sec_user_ids_json = json.dumps(sec_user_ids)
+
+        async with DouyinCrawler(self.kwargs) as crawler:
+            params = UserShortInfo(sec_user_ids=sec_user_ids_json)
+            response = await crawler.fetch_user_short_info(params)
+            user_info = UserShortInfoFilter(response)
+            logger.info(user_info._to_raw())
+            if user_info.status_code != 0:
+                raise APIResponseError(
+                    _("`fetch_user_short_info`请求失败，请更换cookie或稍后再试")
+                )
+            return user_info
 
     async def get_or_add_user_data(
         self,
@@ -428,6 +503,7 @@ class DouyinHandler:
 
         max_counts = max_counts or float("inf")
         videos_collected = 0
+        nickname_raw = sec_user_id  # 默认使用 sec_user_id，防止无作品时未初始化
 
         logger.info(_("处理用户：{0} 发布的作品").format(sec_user_id))
 
@@ -471,7 +547,8 @@ class DouyinHandler:
                 continue
 
             # 防止最后一页不包含任何作品导致无法获取nickname_raw
-            nickname_raw = video.nickname_raw[0]
+            if video.nickname_raw and len(video.nickname_raw) > 0:
+                nickname_raw = video.nickname_raw[0]
 
             logger.debug(_("当前请求的max_cursor：{0}").format(max_cursor))
             logger.debug(
@@ -633,7 +710,7 @@ class DouyinHandler:
         await self._send_bark_notification(
             _("[DouYin] 点赞作品下载"),
             _("用户：{0}\n" "作品数：{1}\n" "下载时间：{2}").format(
-                user.nickname_raw,
+                user.nickname_raw or _("未知用户"),
                 videos_collected,
                 timestamp_2_str(get_timestamp("sec")),
             ),
@@ -1327,10 +1404,8 @@ class DouyinHandler:
         if len(webcast_id) > 12 and len(webcast_id) == 19:
             logger.warning(
                 _(
-                    "直播ID：{0} 长度大于12位，如果使用的是APP分享链接，请使用`fetch_user_live_videos_by_room_id`接口".format(
-                        webcast_id
-                    )
-                )
+                    "直播ID：{0} 长度大于12位，如果使用的是APP分享链接，请使用`fetch_user_live_videos_by_room_id`接口"
+                ).format(webcast_id)
             )
             return UserLiveFilter(None)
 
@@ -1869,8 +1944,8 @@ class DouyinHandler:
             logger.debug(
                 _("最大数量：{0} 每次请求数量：{1}").format(count, current_request_size)
             )
-            logger.debug(_("当前请求的 max_time：{0}".format(max_time)))
-            logger.debug(_("当前请求的 min_time：{0}".format(min_time)))
+            logger.debug(_("当前请求的 max_time：{0}").format(max_time))
+            logger.debug(_("当前请求的 min_time：{0}").format(min_time))
 
             async with DouyinCrawler(self.kwargs) as crawler:
                 params = UserFollowing(
