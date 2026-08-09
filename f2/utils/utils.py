@@ -464,6 +464,243 @@ def check_invalid_naming(
     return invalid_patterns
 
 
+# ---- 作者侧车文件 (Author sidecar files) ----
+
+# 通用字段词表。各应用在自己的 utils.py 中把这些名字映射到平台字段。
+# (Canonical vocabulary. Each app maps these names onto its own fields.)
+SIDECAR_CANONICAL_FIELDS = [
+    "nickname",
+    "nickname_raw",
+    "author_id",
+    "author_handle",
+    "work_id",
+    "work_type",
+    "create_time",
+    "desc",
+    "author_url",
+    "work_url",
+    "seen_at",
+]
+
+# `authors_naming` 未配置时使用的默认模板
+# (Default template when `authors_naming` is not configured)
+SIDECAR_DEFAULT_NAMING = "Authors-{nickname}"
+
+# `authors_fields` 未配置时使用的默认字段
+# (Default field list when `authors_fields` is not configured)
+SIDECAR_DEFAULT_FIELDS = [
+    "nickname",
+    "nickname_raw",
+    "author_id",
+    "author_handle",
+    "work_id",
+    "create_time",
+    "author_url",
+    "work_url",
+    "seen_at",
+]
+
+# 侧车文件名中单个字段的字节上限。
+# 目录名本身最长约 220 字节，而单个路径组件上限为 255 字节，
+# 因此这里保守取 80，兼顾可读性与 SMB 兼容性。
+# (Per-field byte cap for the sidecar filename.)
+SIDECAR_NAME_LIMIT = {"win32": 80, "cygwin": 80, "darwin": 80, "linux": 80}
+
+# 文件名中允许出现的字面量字符 (Literal characters allowed in the filename)
+_SIDECAR_ILLEGAL_LITERAL_RE = re.compile(r"[^一-龥a-zA-Z0-9#\-_. ]")
+_SIDECAR_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+
+
+def inline_text(value: Any) -> str:
+    """
+    把任意值压成单行安全文本 (Flatten any value into safe single-line text)
+
+    换行与制表符会破坏侧车文件的 `key: value` 结构，这里统一折叠成单个空格。
+    (Newlines and tabs would break the sidecar's `key: value` structure.)
+
+    Args:
+        value (Any): 任意值 (Any value)
+
+    Returns:
+        str: 单行文本 (Single-line text)
+    """
+
+    if value is None:
+        return ""
+
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def check_invalid_sidecar_naming(naming: str, allowed_fields: list) -> list:
+    """
+    检查侧车文件名模板是否合法 (Check if the sidecar naming template is valid)
+
+    与 `check_invalid_naming` 不同，这里允许字面量文本（如 `Authors-`），
+    因此不能复用那个函数：它会把 `Authors` 逐字符判为非法。
+    (Unlike `check_invalid_naming`, literal text such as `Authors-` is allowed here,
+    which is why that function cannot be reused.)
+
+    Args:
+        naming (str): 命名模板 (Naming template)
+        allowed_fields (list): 允许的字段名列表 (List of allowed field names)
+
+    Returns:
+        list: 无效的模式列表 (List of invalid patterns)
+    """
+
+    if not naming:
+        return []
+
+    invalid_patterns = []
+
+    # 占位符必须属于通用词表 (Placeholders must belong to the canonical vocabulary)
+    for field in _SIDECAR_PLACEHOLDER_RE.findall(naming):
+        if field not in allowed_fields:
+            invalid_patterns.append("{" + field + "}")
+
+    # 去掉占位符后剩下的字面量必须是文件名安全字符
+    # (Literal text left after stripping placeholders must be filename-safe)
+    literal = _SIDECAR_PLACEHOLDER_RE.sub("", naming)
+    invalid_patterns.extend(sorted(set(_SIDECAR_ILLEGAL_LITERAL_RE.findall(literal))))
+
+    # 目录穿越与隐藏文件 (Path traversal and hidden files)
+    if ".." in naming or naming.startswith("."):
+        invalid_patterns.append(naming)
+
+    return invalid_patterns
+
+
+def resolve_sidecar_fields(
+    data: dict,
+    field_map: dict,
+    url_templates: dict,
+    fields: list,
+) -> list:
+    """
+    把通用字段名解析为 (字段名, 值) 列表 (Resolve canonical names to (name, value) pairs)
+
+    某应用不存在的字段、或取值为空的字段，都会被跳过而不是写成空行。
+    (Fields an app does not have, or that resolve to empty, are skipped rather than
+    written as empty lines.)
+
+    Args:
+        data (dict): 作品数据字典 (Work data dict)
+        field_map (dict): 通用字段名 -> 平台字段名 (Canonical name -> platform field)
+        url_templates (dict): 通用字段名 -> URL 模板 (Canonical name -> URL template)
+        fields (list): 需要输出的通用字段名 (Canonical names to emit)
+
+    Returns:
+        list: (字段名, 值) 元组列表 (List of (name, value) tuples)
+    """
+
+    # 先解析出全部可用的基础字段，URL 模板需要引用它们
+    # (Resolve every available base field first; URL templates reference them)
+    resolved = {}
+    for canonical, platform_field in field_map.items():
+        value = inline_text(data.get(platform_field))
+        if value:
+            resolved[canonical] = value
+
+    pairs = []
+    for canonical in fields:
+        if canonical == "seen_at":
+            pairs.append((canonical, timestamp_2_str(get_timestamp("sec"))))
+            continue
+
+        if canonical in url_templates:
+            template = url_templates[canonical]
+            required = _SIDECAR_PLACEHOLDER_RE.findall(template)
+            if any(name not in resolved for name in required):
+                logger.debug(
+                    _("侧车字段 {0} 缺少依赖字段，已跳过").format(canonical)
+                )
+                continue
+            pairs.append((canonical, template.format(**resolved)))
+            continue
+
+        if canonical not in resolved:
+            logger.debug(_("侧车字段 {0} 不可用，已跳过").format(canonical))
+            continue
+
+        pairs.append((canonical, resolved[canonical]))
+
+    return pairs
+
+
+def format_sidecar_name(
+    naming_template: str,
+    data: dict,
+    field_map: dict,
+    fallback_fields: list = None,
+) -> str:
+    """
+    生成侧车文件名（不含后缀）(Format the sidecar file name, without suffix)
+
+    昵称可能为空、为 None，或经 `replaceT` 后只剩下划线（纯 emoji / 纯符号昵称），
+    这些情况下逐级回退到备用字段，最后回退到 "unknown"。
+    (A nickname may be empty, None, or reduce to underscores after `replaceT`;
+    fall back through the alternatives, then to "unknown".)
+
+    Args:
+        naming_template (str): 命名模板 (Naming template)
+        data (dict): 作品数据字典 (Work data dict)
+        field_map (dict): 通用字段名 -> 平台字段名 (Canonical name -> platform field)
+        fallback_fields (list, optional): 回退字段顺序 (Fallback order)
+
+    Returns:
+        str: 文件名 (File name)
+    """
+
+    fallback_fields = fallback_fields or ["author_id", "work_id"]
+
+    def _value(canonical: str) -> str:
+        platform_field = field_map.get(canonical)
+        if platform_field is None:
+            return ""
+        value = inline_text(data.get(platform_field))
+        # replaceT 会把 emoji 等字符全部替换成下划线，此时视为无效
+        # (replaceT turns emoji into underscores; treat that as empty)
+        return "" if not value.strip("_") else value
+
+    fields = {}
+    for canonical in _SIDECAR_PLACEHOLDER_RE.findall(naming_template):
+        # 配置文件中的模板不会经过 click 回调校验，因此这里必须再查一次，
+        # 否则一个拼写错误会静默地把每个目录都命名成同一个回退值。
+        # (A template set in the config file never passes through the click callback,
+        # so re-check here: a typo would otherwise silently name every folder the same.)
+        if canonical not in SIDECAR_CANONICAL_FIELDS:
+            raise KeyError(_("文件名模板字段 {0} 不存在，请检查").format(canonical))
+
+        value = _value(canonical)
+
+        if not value:
+            for fallback in fallback_fields:
+                value = _value(fallback)
+                if value:
+                    break
+
+        fields[canonical] = split_filename(value or "unknown", SIDECAR_NAME_LIMIT)
+
+    try:
+        return naming_template.format(**fields)
+    except KeyError as e:
+        raise KeyError(_("文件名模板字段 {0} 不存在，请检查").format(e))
+
+
+def format_sidecar_content(pairs: list) -> str:
+    """
+    生成侧车文件内容 (Format the sidecar file content)
+
+    Args:
+        pairs (list): (字段名, 值) 元组列表 (List of (name, value) tuples)
+
+    Returns:
+        str: 文件内容 (File content)
+    """
+
+    return "".join(f"{name}: {value}\n" for name, value in pairs)
+
+
 def merge_config(
     main_conf: dict,
     custom_conf: dict,

@@ -9,8 +9,12 @@ from typing import Any, Union
 from f2.i18n.translator import _
 from f2.log.logger import logger
 from f2.dl.base_downloader import BaseDownloader
-from f2.utils.utils import filter_by_date_interval
-from f2.apps.twitter.utils import format_file_name
+from f2.utils.utils import filter_by_date_interval, SIDECAR_DEFAULT_NAMING
+from f2.apps.twitter.utils import (
+    format_file_name,
+    format_author_file_content,
+    format_author_file_name,
+)
 from f2.cli.cli_console import RichConsoleManager
 
 
@@ -120,6 +124,9 @@ class TwitterDownloader(BaseDownloader):
         # logger.info(tweet_data_dict)
         # logger.info("===================================")
 
+        if self.kwargs.get("authors"):
+            await self.download_authors()
+
         # 动图属于视频类型
         if self.tweet_media_type in ["video", "animated_gif"]:
             await self.download_video()
@@ -127,6 +134,23 @@ class TwitterDownloader(BaseDownloader):
             await self.download_images()
 
         await self.download_desc()
+
+    async def download_authors(self):
+        """
+        写入作者文件，默认为 Authors-<昵称>.txt
+        (Write the per-work author file, Authors-<nickname>.txt by default)
+        """
+
+        author_name = format_author_file_name(
+            self.kwargs.get("authors_naming") or SIDECAR_DEFAULT_NAMING,
+            self.tweet_data_dict,
+        )
+        author_content = format_author_file_content(
+            self.kwargs.get("authors_fields"), self.tweet_data_dict
+        )
+        await self.initiate_static_download(
+            _("作者"), author_content, self.base_path, author_name, ".txt"
+        )
 
     async def download_video(self):
         if not self.tweet_video_url:

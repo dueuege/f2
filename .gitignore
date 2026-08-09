@@ -136,6 +136,10 @@ package-lock.json
 # Download
 Download/
 
+# 本地沙盒测试配置内含真实 cookie，禁止提交
+# (Local sandbox test configs contain a real session cookie -- never commit them)
+.claude/test/
+
 # DataBase
 .db
 

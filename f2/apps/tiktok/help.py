@@ -27,6 +27,12 @@ def help() -> None:
         ("-m --music", "[dark_cyan]Choice", _("是否保存视频原声。可选：'yes'、'no'")),
         ("-v --cover", "[dark_cyan]Choice", _("是否保存视频封面。可选：'yes'、'no'")),
         ("-d --desc", "[dark_cyan]Choice", _("是否保存视频文案。可选：'yes'、'no'")),
+        ("-a --authors", "[dark_cyan]Bool", _("是否在作品目录内保存作者文件。")),
+        (
+            "--authors-naming",
+            "[dark_cyan]str",
+            _("作者文件的命名模式，默认 `Authors-{nickname}`。"),
+        ),
         ("-p --path", "[dark_cyan]str", _("作品保存位置，支持绝对与相对路径。")),
         (
             "-f --folderize",

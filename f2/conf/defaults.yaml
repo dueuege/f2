@@ -4,6 +4,18 @@ douyin:
   lyric:
   cover:
   desc:
+  authors:
+  authors_naming: 'Authors-{nickname}'
+  authors_fields:
+    - nickname
+    - nickname_raw
+    - author_id
+    - author_handle
+    - work_id
+    - create_time
+    - author_url
+    - work_url
+    - seen_at
   path: Download
   folderize:
   mode:
@@ -23,6 +35,18 @@ tiktok:
   music:
   cover:
   desc:
+  authors:
+  authors_naming: 'Authors-{nickname}'
+  authors_fields:
+    - nickname
+    - nickname_raw
+    - author_id
+    - author_handle
+    - work_id
+    - create_time
+    - author_url
+    - work_url
+    - seen_at
   path: Download
   folderize:
   mode:
@@ -40,6 +64,18 @@ tiktok:
 
 weibo:
   url:
+  authors:
+  authors_naming: 'Authors-{nickname}'
+  authors_fields:
+    - nickname
+    - nickname_raw
+    - author_id
+    - author_handle
+    - work_id
+    - create_time
+    - author_url
+    - work_url
+    - seen_at
   path: Download
   folderize:
   mode:
@@ -57,6 +93,18 @@ weibo:
 
 twitter:
   url:
+  authors:
+  authors_naming: 'Authors-{nickname}'
+  authors_fields:
+    - nickname
+    - nickname_raw
+    - author_id
+    - author_handle
+    - work_id
+    - create_time
+    - author_url
+    - work_url
+    - seen_at
   path: Download
   folderize:
   mode:

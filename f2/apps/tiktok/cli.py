@@ -14,8 +14,10 @@ from f2.utils.utils import (
     get_resource_path,
     get_cookie_from_browser,
     check_invalid_naming,
+    check_invalid_sidecar_naming,
     merge_config,
     check_proxy_avail,
+    SIDECAR_CANONICAL_FIELDS,
 )
 from f2.utils.conf_manager import ConfigManager
 from f2.i18n.translator import TranslationManager, _
@@ -152,6 +154,42 @@ def handler_naming(
     return value
 
 
+def handler_authors_naming(
+    ctx: click.Context,
+    param: typing.Union[click.Option, click.Parameter],
+    value: typing.Any,
+) -> str:
+    """处理作者文件命名模式 (Handle the author file naming pattern)
+
+    Args:
+        ctx (click.Context): click的上下文对象 (Click's context object)
+        param (typing.Union[click.Option, click.Parameter]): 提供的参数或选项 (The provided parameter or option)
+        value (typing.Any): 参数或选项的值 (The value of the parameter or option)
+
+    Raises:
+        click.BadParameter: 如果命名模式无效 (If the naming pattern is invalid)
+
+    Returns:
+        value: 命名模式模板 (Naming pattern template)
+    """
+    # 避免和配置文件参数冲突
+    if not value or ctx.resilient_parsing:
+        return
+
+    # 与 `handler_naming` 不同，这里允许 `Authors-` 这样的字面量文本
+    # (Unlike `handler_naming`, literal text such as `Authors-` is allowed here)
+    invalid_patterns = check_invalid_sidecar_naming(value, SIDECAR_CANONICAL_FIELDS)
+
+    if invalid_patterns:
+        raise click.BadParameter(
+            _("`{0}` 中的 `{1}` 不符合命名模式").format(
+                value, "".join(invalid_patterns)
+            )
+        )
+
+    return value
+
+
 def validate_proxies(
     ctx: click.Context,
     param: typing.Union[click.Option, click.Parameter],
@@ -222,6 +260,19 @@ def validate_proxies(
     type=bool,
     # default="yes",
     help=_("是否保存视频文案"),
+)
+@click.option(
+    "--authors",
+    "-a",
+    type=bool,
+    # default="yes",
+    help=_("是否在作品目录内保存作者文件"),
+)
+@click.option(
+    "--authors-naming",
+    type=str,
+    help=_("作者文件的命名模式，默认 `Authors-{nickname}`"),
+    callback=handler_authors_naming,
 )
 @click.option(
     "--path",

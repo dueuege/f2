@@ -11,7 +11,13 @@ from f2.log.logger import logger
 from f2.dl.base_downloader import BaseDownloader
 from f2.utils.utils import get_timestamp, timestamp_2_str, filter_by_date_interval
 from f2.apps.douyin.db import AsyncUserDB
-from f2.apps.douyin.utils import format_file_name, json_2_lrc
+from f2.apps.douyin.utils import (
+    format_file_name,
+    format_author_file_content,
+    format_author_file_name,
+    json_2_lrc,
+)
+from f2.utils.utils import SIDECAR_DEFAULT_NAMING
 from f2.cli.cli_console import RichConsoleManager
 
 
@@ -125,6 +131,15 @@ class DouyinDownloader(BaseDownloader):
         aweme_status = aweme_data_dict.get("private_status")
         aweme_type = aweme_data_dict.get("aweme_type")
 
+        self.aweme_downloadable = not aweme_prohibited and aweme_status in [0, 1, 2]
+
+        # 作者文件先于屏蔽检查执行：作品可能在下载之后才被屏蔽，
+        # 若放在检查之后，这些历史目录将永远无法补写作者信息。
+        # (Run before the prohibited check: a work may have been blocked after it was
+        # downloaded, and those existing folders could otherwise never be backfilled.)
+        if self.kwargs.get("authors"):
+            await self.download_authors()
+
         if aweme_prohibited:
             logger.warning(_("[{0}] 该作品已被屏蔽，无法下载").format(self.aweme_id))
             return
@@ -195,6 +210,33 @@ class DouyinDownloader(BaseDownloader):
         desc_content = self.aweme_data_dict.get("desc")
         await self.initiate_static_download(
             _("文案"), desc_content, self.base_path, desc_name, ".txt"
+        )
+
+    async def download_authors(self):
+        """
+        写入作者文件，默认为 Authors-<昵称>.txt
+        (Write the per-work author file, Authors-<nickname>.txt by default)
+        """
+
+        base_path = self._ensure_path(self.base_path)
+
+        # 作品不可下载且目录尚不存在时，不要仅为这个文件创建一个空目录
+        # (Do not create an empty folder just for this file)
+        if not self.aweme_downloadable and not base_path.is_dir():
+            logger.debug(
+                _("[{0}] 该作品不可下载且目录不存在，跳过作者文件").format(self.aweme_id)
+            )
+            return
+
+        author_name = format_author_file_name(
+            self.kwargs.get("authors_naming") or SIDECAR_DEFAULT_NAMING,
+            self.aweme_data_dict,
+        )
+        author_content = format_author_file_content(
+            self.kwargs.get("authors_fields"), self.aweme_data_dict
+        )
+        await self.initiate_static_download(
+            _("作者"), author_content, base_path, author_name, ".txt"
         )
 
     async def download_video(self):

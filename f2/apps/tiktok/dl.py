@@ -10,9 +10,18 @@ from typing import Any, Union
 from f2.i18n.translator import _
 from f2.log.logger import logger
 from f2.dl.base_downloader import BaseDownloader
-from f2.utils.utils import get_timestamp, timestamp_2_str, filter_by_date_interval
+from f2.utils.utils import (
+    get_timestamp,
+    timestamp_2_str,
+    filter_by_date_interval,
+    SIDECAR_DEFAULT_NAMING,
+)
 from f2.apps.tiktok.db import AsyncUserDB
-from f2.apps.tiktok.utils import format_file_name
+from f2.apps.tiktok.utils import (
+    format_file_name,
+    format_author_file_content,
+    format_author_file_name,
+)
 from f2.cli.cli_console import RichConsoleManager
 
 
@@ -156,6 +165,46 @@ class TiktokDownloader(BaseDownloader):
 
             await self.execute_tasks()
 
+    async def download_authors(
+        self,
+        kwargs: dict,
+        aweme_data_dict: dict,
+        base_path: Any,
+        downloadable: bool,
+    ) -> None:
+        """
+        写入作者文件，默认为 Authors-<昵称>.txt
+        (Write the per-work author file, Authors-<nickname>.txt by default)
+
+        Args:
+            kwargs (dict): 命令行参数 (Command line arguments)
+            aweme_data_dict (dict): 作品数据字典 (Work data dict)
+            base_path (Any): 作品目录路径 (Work folder path)
+            downloadable (bool): 作品是否可下载 (Whether the work is downloadable)
+        """
+
+        base_path = self._ensure_path(base_path)
+
+        # 作品不可下载且目录尚不存在时，不要仅为这个文件创建一个空目录
+        # (Do not create an empty folder just for this file)
+        if not downloadable and not base_path.is_dir():
+            logger.debug(
+                _("{0} 该作品不可下载且目录不存在，跳过作者文件").format(
+                    aweme_data_dict.get("aweme_id")
+                )
+            )
+            return
+
+        author_name = format_author_file_name(
+            kwargs.get("authors_naming") or SIDECAR_DEFAULT_NAMING, aweme_data_dict
+        )
+        author_content = format_author_file_content(
+            kwargs.get("authors_fields"), aweme_data_dict
+        )
+        await self.initiate_static_download(
+            _("作者"), author_content, base_path, author_name, ".txt"
+        )
+
     async def handler_download(
         self, kwargs: dict, aweme_data_dict: dict, user_path: Any
     ) -> None:
@@ -184,6 +233,18 @@ class TiktokDownloader(BaseDownloader):
         logger.debug(f"========{aweme_id}========")
         logger.debug(aweme_data_dict)
         logger.debug("===================================")
+
+        # 作者文件先于屏蔽检查执行：作品可能在下载之后才被屏蔽，
+        # 若放在检查之后，这些历史目录将永远无法补写作者信息。
+        # (Run before the prohibited check: a work may have been blocked after it was
+        # downloaded, and those existing folders could otherwise never be backfilled.)
+        if kwargs.get("authors"):
+            await self.download_authors(
+                kwargs,
+                aweme_data_dict,
+                base_path,
+                not aweme_privateItem and not aweme_secret,
+            )
 
         # 检查作品是否被屏蔽
         if aweme_privateItem:

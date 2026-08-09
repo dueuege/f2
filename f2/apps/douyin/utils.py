@@ -26,6 +26,10 @@ from f2.utils.utils import (
     get_timestamp,
     extract_valid_urls,
     split_filename,
+    format_sidecar_content,
+    format_sidecar_name,
+    resolve_sidecar_fields,
+    SIDECAR_DEFAULT_FIELDS,
 )
 from f2.crawlers.base_crawler import BaseCrawler
 from f2.exceptions.api_exceptions import (
@@ -1511,6 +1515,62 @@ def format_file_name(
         return naming_template.format(**fields)
     except KeyError as e:
         raise KeyError(_("文件名模板字段 {0} 不存在，请检查").format(e))
+
+
+# 通用字段名 -> 抖音字段名 (Canonical name -> Douyin field)
+AUTHOR_FIELD_MAP = {
+    "nickname": "nickname",
+    "nickname_raw": "nickname_raw",
+    "author_id": "uid",
+    "author_handle": "sec_user_id",
+    "work_id": "aweme_id",
+    "work_type": "aweme_type",
+    "create_time": "create_time",
+    "desc": "desc",
+}
+
+# 由其他字段拼接而成的字段 (Fields composed from other fields)
+AUTHOR_URL_TEMPLATES = {
+    "author_url": "https://www.douyin.com/user/{author_handle}",
+    "work_url": "https://www.douyin.com/video/{work_id}",
+}
+
+
+def format_author_file_name(naming_template: str, aweme_data: dict) -> str:
+    """
+    生成作者侧车文件名（不含后缀）(Format the author sidecar file name, without suffix)
+
+    Args:
+        naming_template (str): 命名模板，如 "Authors-{nickname}"
+        aweme_data (dict): 抖音数据的字典 (dict of douyin data)
+
+    Returns:
+        str: 文件名 (File name)
+    """
+
+    return format_sidecar_name(naming_template, aweme_data, AUTHOR_FIELD_MAP)
+
+
+def format_author_file_content(fields: list, aweme_data: dict) -> str:
+    """
+    生成作者侧车文件内容 (Format the author sidecar file content)
+
+    Args:
+        fields (list): 需要输出的通用字段名 (Canonical field names to emit)
+        aweme_data (dict): 抖音数据的字典 (dict of douyin data)
+
+    Returns:
+        str: 文件内容 (File content)
+    """
+
+    return format_sidecar_content(
+        resolve_sidecar_fields(
+            aweme_data,
+            AUTHOR_FIELD_MAP,
+            AUTHOR_URL_TEMPLATES,
+            fields or SIDECAR_DEFAULT_FIELDS,
+        )
+    )
 
 
 def create_user_folder(kwargs: dict, nickname: Union[str, int]) -> Path:

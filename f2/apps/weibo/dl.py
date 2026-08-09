@@ -9,7 +9,12 @@ from typing import Any, Dict, List, Union
 from f2.log.logger import logger
 from f2.i18n.translator import _
 from f2.dl.base_downloader import BaseDownloader
-from f2.apps.weibo.utils import format_file_name
+from f2.utils.utils import SIDECAR_DEFAULT_NAMING
+from f2.apps.weibo.utils import (
+    format_file_name,
+    format_author_file_content,
+    format_author_file_name,
+)
 from f2.apps.weibo.api import WeiboAPIEndpoints
 from f2.cli.cli_console import RichConsoleManager
 
@@ -107,6 +112,9 @@ class WeiboDownloader(BaseDownloader):
             logger.debug(_("开始下载微博：{0}").format(self.weibo_id))
             await self.download_desc()
 
+            if self.kwargs.get("authors"):
+                await self.download_authors()
+
         # 检查微博是否有图片
         if (
             self.weibo_data_dict.get("weibo_pic_num") == 0
@@ -159,6 +167,23 @@ class WeiboDownloader(BaseDownloader):
         desc_content = self.weibo_data_dict.get("weibo_desc_raw")
         await self.initiate_static_download(
             _("文案"), desc_content, self.base_path, desc_name, ".txt"
+        )
+
+    async def download_authors(self):
+        """
+        写入作者文件，默认为 Authors-<昵称>.txt
+        (Write the per-work author file, Authors-<nickname>.txt by default)
+        """
+
+        author_name = format_author_file_name(
+            self.kwargs.get("authors_naming") or SIDECAR_DEFAULT_NAMING,
+            self.weibo_data_dict,
+        )
+        author_content = format_author_file_content(
+            self.kwargs.get("authors_fields"), self.weibo_data_dict
+        )
+        await self.initiate_static_download(
+            _("作者"), author_content, self.base_path, author_name, ".txt"
         )
 
     async def download_images(self):

@@ -128,11 +128,20 @@ class LogManager(metaclass=Singleton):
             files_to_delete = all_logs[:-keep_last_n]
         for log_file in files_to_delete:
             try:
-                log_file.unlink()
+                # 多个 f2 进程可能同时清理同一个日志目录（如 hourly 与 24h 定时任务
+                # 共享 NAS 上的 logs/），另一个进程可能已经删除了这个文件。
+                # missing_ok=True 让竞态失败方安静跳过，而不是在导入阶段抛异常。
+                # (Several f2 processes may clean the same log directory concurrently;
+                # the loser of the race must skip quietly rather than raise at import.)
+                log_file.unlink(missing_ok=True)
             except PermissionError:
                 self.logger.warning(
                     f"无法删除日志文件 {log_file}, 它正被另一个进程使用"
                 )
+            except OSError as e:
+                # 日志清理绝不能阻止 f2 启动
+                # (Log cleanup must never prevent f2 from starting)
+                self.logger.warning(f"无法删除日志文件 {log_file}: {e}")
 
     def shutdown(self):
         for handler in self.logger.handlers:

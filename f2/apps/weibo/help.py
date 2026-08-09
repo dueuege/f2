@@ -18,6 +18,12 @@ def help() -> None:
     options = [
         ("-c --config", "[dark_cyan]Path", _("配置文件的路径，最低优先")),
         ("-u --url", "[dark_cyan]str", _("除了单个微博外，其他URL都需要用户主页URL")),
+        ("-a --authors", "[dark_cyan]Bool", _("是否在作品目录内保存作者文件。")),
+        (
+            "--authors-naming",
+            "[dark_cyan]str",
+            _("作者文件的命名模式，默认 `Authors-{nickname}`。"),
+        ),
         ("-p --path", "[dark_cyan]str", _("微博保存位置，默认为 'Download'")),
         (
             "-f --folderize",
