@@ -121,7 +121,25 @@ class LogManager(metaclass=Singleton):
         if not self.log_dir:
             return
         # self.shutdown()
-        all_logs = sorted(self.log_dir.glob("*.log"))
+
+        def _mtime(log_file: Path) -> float:
+            # 另一个 f2 进程可能刚刚删掉这个文件；排序阶段不能因此崩溃。
+            # 取不到时间就当作最旧，优先删除。
+            # (Another f2 process may have just removed this file; sorting must not
+            # raise. Treat an unreadable entry as oldest so it is deleted first.)
+            try:
+                return log_file.stat().st_mtime
+            except OSError:
+                return 0.0
+
+        # 按修改时间排序，而不是文件名。
+        # 按文件名排序时 "f2-trace-*" 永远排在 "f2-<日期>-*" 之后，保留的 n 个
+        # 名额会被 trace 日志占满，导致每次启动都把真正的主日志删光——NAS 上
+        # 曾经因此只剩下一堆 0 字节的 trace 日志。
+        # (Sort by mtime, not by name: "f2-trace-*" always sorts after "f2-<date>-*",
+        # so the keep-window filled up with trace logs and every main log was deleted
+        # on the next start — the NAS log dir was left holding only 0-byte traces.)
+        all_logs = sorted(self.log_dir.glob("*.log"), key=_mtime)
         if keep_last_n == 0:
             files_to_delete = all_logs
         else:
