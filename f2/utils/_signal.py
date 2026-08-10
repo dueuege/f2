@@ -57,10 +57,14 @@ class SignalManager(metaclass=Singleton):
         """内部处理接收到的信号"""
         self._shutdown_event.set()
 
-        # 取消所有运行中的asyncio任务
-        loop = asyncio.get_running_loop()  # 避免DeprecationWarning
-
         try:
+            # 取消所有运行中的asyncio任务
+            # 注意：get_running_loop() 必须放在 try 内部。信号可能在解释器关闭期间
+            # 到达（threading._shutdown() 中），此时已没有运行中的事件循环，
+            # 它会抛出 RuntimeError；若放在 try 外部，finally 不会执行，
+            # sys.exit() 永远不会被调用，进程以未处理异常退出（status=1/FAILURE）。
+            loop = asyncio.get_running_loop()  # 避免DeprecationWarning
+
             if loop.is_running():
                 for task in asyncio.all_tasks(loop):
                     task.cancel()

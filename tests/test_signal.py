@@ -1,9 +1,37 @@
 # path: tests/test_signal.py
 
 import asyncio
+import signal
 import pytest
 
 from f2.utils._signal import SignalManager
+
+
+def test_handle_signal_without_running_loop_still_exits():
+    """
+    信号在解释器关闭期间到达时（threading._shutdown() 中已无事件循环），
+    _handle_signal 必须仍然走到 finally 并调用 sys.exit()。
+
+    回归测试：get_running_loop() 曾经写在 try 外面，抛出
+    "RuntimeError: no running event loop" 后 finally 不再执行，
+    systemd 只能看到 status=1/FAILURE，数据库连接也来不及关闭。
+    """
+    manager = SignalManager()
+    manager.shutdown_event.clear()
+
+    try:
+        # 此处没有运行中的事件循环 —— 正是崩溃时的场景
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()
+
+        with pytest.raises(SystemExit):
+            manager._handle_signal(signal.SIGTERM, None)
+
+        # 即使没有事件循环，关闭事件也必须被设置
+        assert manager.shutdown_event.is_set()
+    finally:
+        # SignalManager 是单例，必须还原状态，否则会污染其它测试
+        manager.shutdown_event.clear()
 
 
 # 模拟长时间运行的任务
